@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>GPU vs CPU check</title>
+<pre id="out">running…</pre>
+<script type="module">
+import { GPUSolver } from '../js/gpu-solver.js';
+import { LBMSolver } from '../js/lbm-cpu.js';
+import { voxelize, PRESETS } from '../js/shapes.js';
+
+// Same tunnel, same body, same parameters on both solvers; compare after N steps.
+const grid = { nx: 40, ny: 24, nz: 20 };
+const body = voxelize(PRESETS.sphere, grid, { center: [13, 11.5, 9.5], length: 10, pitch: 0, yaw: 0 });
+const params = { tau: 0.58, smagorinsky: 0.17, sponge: 6, spongeTau: 1.0, uIn: [0.08, 0, 0], ramp: 50 };
+const steps = 150;
+
+const cpu = new LBMSolver({ ...grid, ...params, boundary: 'tunnel', solid: body.solid });
+cpu.run(steps);
+
+const gl = document.createElement('canvas').getContext('webgl2');
+const gpu = new GPUSolver(gl, grid);
+Object.assign(gpu, { tau: params.tau, cs: params.smagorinsky, sponge: params.sponge, spongeTau: params.spongeTau, uIn: params.uIn, ramp: params.ramp });
+gpu.setSolid(body.solid);
+gpu.reset();
+gpu.step(steps);
+const g = gpu.readMacros();
+const force = gpu.totalForce();
+
+let maxU = 0, maxErr = 0, maxRhoErr = 0;
+for (let k = 0; k < cpu.n; k++) {
+  if (body.solid[k]) continue;
+  maxU = Math.max(maxU, Math.hypot(cpu.ux[k], cpu.uy[k], cpu.uz[k]));
+  maxErr = Math.max(maxErr, Math.abs(g.ux[k] - cpu.ux[k]), Math.abs(g.uy[k] - cpu.uy[k]), Math.abs(g.uz[k] - cpu.uz[k]));
+  maxRhoErr = Math.max(maxRhoErr, Math.abs(g.rho[k] - cpu.rho[k]));
+}
+const fErr = Math.abs(force[0] - cpu.bodyForce[0]) / Math.abs(cpu.bodyForce[0]);
+const result = { steps, maxU, maxErr, relErr: maxErr / maxU, maxRhoErr, cpuForce: cpu.bodyForce, gpuForce: force, forceRelErr: fErr,
+  pass: maxErr / maxU < 1e-3 && maxRhoErr < 1e-4 && fErr < 1e-3 };
+window.result = result;
+document.getElementById('out').textContent = JSON.stringify(result, null, 2);
+</script>
