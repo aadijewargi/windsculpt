@@ -1,8 +1,8 @@
 // Reference D3Q19 lattice Boltzmann solver in plain JavaScript (Float64).
 //
 // It implements exactly the same scheme as the GPU solver (pull streaming,
-// halfway bounce-back, free-slip tunnel walls, equilibrium inlet,
-// zero-gradient outlet, BGK + Smagorinsky collision, outlet sponge), so the
+// halfway bounce-back, free-slip tunnel walls, equilibrium inlet, pressure
+// outlet, BGK + Smagorinsky collision, outlet sponge), so the
 // GPU result can be checked against it. It also supports periodic boxes and a
 // Guo body force, which the validation tests use.
 
@@ -120,6 +120,26 @@ export class LBMSolver {
         for (let i = 0; i < Q; i++) g[i * n + k] = W[i];
         continue;
       }
+      // ---- inlet and outlet planes ----
+      //   inlet  x = 0:      equilibrium at u = U_in, rho = 1
+      //   outlet x = nx - 1: pressure outlet, rho = 1 with the velocity of the last
+      //                      interior node (post-collision moments equal pre-collision ones)
+      // Without the outlet pressure anchor the density drifts up and the free
+      // stream slows down as soon as a body adds drag.
+      if (!periodic && (x === 0 || x === nx - 1)) {
+        if (x === 0) {
+          for (let i = 0; i < Q; i++) g[i * n + k] = feq(i, 1, uin[0], uin[1], uin[2]);
+          continue;
+        }
+        const kn = k - 1;
+        let r = 0, mx = 0, my = 0, mz = 0;
+        for (let i = 0; i < Q; i++) {
+          const v = f[i * n + kn];
+          r += v; mx += C[i][0] * v; my += C[i][1] * v; mz += C[i][2] * v;
+        }
+        for (let i = 0; i < Q; i++) g[i * n + k] = feq(i, 1, mx / r, my / r, mz / r);
+        continue;
+      }
       // ---- streaming (pull) with boundary handling ----
       for (let i = 0; i < Q; i++) {
         const c = C[i];
@@ -152,12 +172,6 @@ export class LBMSolver {
         } else {
           fi[i] = f[d * n + ks];
         }
-      }
-
-      // ---- inlet: impose equilibrium at the free-stream velocity ----
-      if (!periodic && x === 0) {
-        for (let i = 0; i < Q; i++) g[i * n + k] = feq(i, 1, uin[0], uin[1], uin[2]);
-        continue;
       }
 
       // ---- macroscopic moments ----

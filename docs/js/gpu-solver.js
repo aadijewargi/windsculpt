@@ -48,6 +48,19 @@ function fetchDir(d, atlasVar) {
 
 function stepShader() {
   const lines = [];
+  // Equilibrium deviation: f_eq - w = w (rho' + rho (3 cu + 4.5 cu^2 - 1.5 uu)).
+  const eqLines = (target, rhoP, rho, u) => C.map((c, i) => {
+    const cu = [c[0] && `${c[0] < 0 ? '-' : ''}${u}.x`, c[1] && `${c[1] < 0 ? '-' : ''}${u}.y`, c[2] && `${c[2] < 0 ? '-' : ''}${u}.z`]
+      .filter(Boolean).join(' + ').replace(/\+ -/g, '- ') || '0.0';
+    return `  { float cu = ${cu}; ${target}[${i}] = ${wConst(i)} * (${rhoP} + ${rho} * (3.0 * cu + 4.5 * cu * cu - 1.5 * uu)); }`;
+  }).join('\n');
+
+  // Moments of the neighbouring node's populations (deviation form).
+  const nbSums = C.map((c, i) => {
+    const t = [`{ float v = ${fetchDir(i, 'na')}; rs += v;`];
+    if (c[0] || c[1] || c[2]) t.push(`ms += vec3(${fl(c[0])}, ${fl(c[1])}, ${fl(c[2])}) * v;`);
+    return `    ${t.join(' ')} }`;
+  }).join('\n');
   lines.push(`#version 300 es
 precision highp float;
 precision highp int;
@@ -85,6 +98,25 @@ void main() {
   if (p.z >= uN.z) { writeAll(d); oMacro = vec4(0.0, 0.0, 0.0, 1.0); oForce = vec4(0.0); return; }
   if (solidAt(a)) { writeAll(d); oMacro = vec4(0.0, 0.0, 0.0, 1.0); oForce = vec4(0.0, 0.0, 0.0, 1.0); return; }
 
+  if (p.x == 0 || p.x == uN.x - 1) {
+    // Inlet (x = 0): equilibrium at u = U_in, rho = 1.
+    // Outlet (x = nx-1): pressure outlet, rho = 1 with the velocity of the last
+    // interior node. Without this pressure anchor the tunnel's density drifts up
+    // and the free stream slows down as soon as a body adds drag.
+    ivec2 na = toAtlas(p + ivec3(p.x == 0 ? 1 : -1, 0, 0));
+    float rs = 0.0; vec3 ms = vec3(0.0);
+${nbSums}
+    vec3 u; float rhoP;
+    if (p.x == 0) { u = uUin; rhoP = 0.0; } else { u = ms / (1.0 + rs); rhoP = 0.0; }
+    float rho = 1.0 + rhoP, uu = dot(u, u);
+    float e[20]; e[19] = 0.0;
+${eqLines('e', 'rhoP', 'rho', 'u')}
+    writeAll(e);
+    oMacro = vec4(u, rho);
+    oForce = vec4(0.0);
+    return;
+  }
+
   vec3 force = vec3(0.0);
   ivec3 s; ivec2 sa; bool oy, oz; float mv;
   d[0] = ${fetchDir(0, 'a')};`);
@@ -114,25 +146,7 @@ void main() {
   else d[${i}] = ${fetchDir(i, 'sa')};`);
   }
 
-  // Equilibrium deviation: f_eq - w = w (rho' + rho (3 cu + 4.5 cu^2 - 1.5 uu)).
-  const eqLines = (target, rhoP, rho, u) => C.map((c, i) => {
-    const cu = [c[0] && `${c[0] < 0 ? '-' : ''}${u}.x`, c[1] && `${c[1] < 0 ? '-' : ''}${u}.y`, c[2] && `${c[2] < 0 ? '-' : ''}${u}.z`]
-      .filter(Boolean).join(' + ').replace(/\+ -/g, '- ') || '0.0';
-    return `  { float cu = ${cu}; ${target}[${i}] = ${wConst(i)} * (${rhoP} + ${rho} * (3.0 * cu + 4.5 * cu * cu - 1.5 * uu)); }`;
-  }).join('\n');
-
   lines.push(`
-
-  if (p.x == 0) {
-    // Inlet: equilibrium at the free-stream velocity and unit density.
-    vec3 u = uUin; float uu = dot(u, u);
-    float e[20]; e[19] = 0.0;
-${eqLines('e', '0.0', '1.0', 'u')}
-    writeAll(e);
-    oMacro = vec4(u, 1.0);
-    oForce = vec4(force, 0.0);
-    return;
-  }
 
   float rhoP = 0.0; vec3 m = vec3(0.0);`);
   for (let i = 0; i < Q; i++) {

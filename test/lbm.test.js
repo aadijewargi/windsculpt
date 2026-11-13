@@ -27,6 +27,24 @@ test('uniform free stream is an exact steady state of the empty tunnel', () => {
   assert.ok(err < 1e-12, `max deviation ${err}`);
 });
 
+test('the tunnel keeps its free-stream speed and density with a body in it', async () => {
+  // Regression: with a zero-gradient outlet the density drifted up and the
+  // free stream slowed by ~25% once the body's drag built up a pressure rise.
+  const { voxelize, PRESETS } = await import('../docs/js/shapes.js');
+  const grid = { nx: 48, ny: 24, nz: 24 };
+  const body = voxelize(PRESETS.sphere, grid, { center: [16, 11.5, 11.5], length: 6 });
+  const U = 0.07;
+  const s = new LBMSolver({ ...grid, tau: 0.6, uIn: [U, 0, 0], solid: body.solid, sponge: 6, spongeTau: 1, ramp: 200, smagorinsky: 0.17 });
+  s.run(1500);
+  for (const x of [6, 30]) {
+    let m = 0, r = 0;
+    for (let z = 0; z < 24; z++) for (let y = 0; y < 24; y++) { const k = s.idx(x, y, z); m += s.rho[k] * s.ux[k]; r += s.rho[k]; }
+    const cells = 24 * 24;
+    assert.ok(Math.abs(m / cells - U) / U < 0.01, `mass flux at x=${x}: ${m / cells} vs ${U}`);
+    assert.ok(Math.abs(r / cells - 1) < 0.005, `mean density at x=${x}: ${r / cells}`);
+  }
+});
+
 test('a rolling road moving with the free stream leaves the flow undisturbed; a fixed floor does not', () => {
   const nx = 16, ny = 10, nz = 6;
   const solid = new Uint8Array(nx * ny * nz);
