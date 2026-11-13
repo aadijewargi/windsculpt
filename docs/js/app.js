@@ -450,4 +450,4 @@ requestBuild();
 requestAnimationFrame(frame);
 
 // Handle for scripted captures (scripts/capture.js).
-window.windsculpt = { state, solver, renderer, camera, applyPreset, requestBuild, syncControls, setRake, hist, avg: () => avg, body };
+window.windsculpt = { state, solver, renderer, camera, applyPreset, requestBuild, syncControls, setRake, hist, avg: () => avg, body, sampleForces, updateHud };

@@ -223,15 +223,28 @@ export function surfaceNets(field, { nx, ny, nz }) {
   const vIndex = new Int32Array((nx - 1) * (ny - 1) * (nz - 1)).fill(-1);
   const cid = (x, y, z) => x + (nx - 1) * (y + (ny - 1) * z);
   const pos = [], nor = [], idx = [];
+  // Normal = trilinearly interpolated central-difference gradient of the field,
+  // which is much smoother than the gradient at the nearest node.
+  const gradAt = (x, y, z, out) => {
+    const xi = Math.min(Math.max(x, 1), nx - 2), yi = Math.min(Math.max(y, 1), ny - 2), zi = Math.min(Math.max(z, 1), nz - 2);
+    out[0] += field[id(xi + 1, yi, zi)] - field[id(xi - 1, yi, zi)];
+    out[1] += field[id(xi, yi + 1, zi)] - field[id(xi, yi - 1, zi)];
+    out[2] += field[id(xi, yi, zi + 1)] - field[id(xi, yi, zi - 1)];
+  };
   const grad = (x, y, z) => {
-    const xi = Math.min(Math.max(Math.round(x), 1), nx - 2);
-    const yi = Math.min(Math.max(Math.round(y), 1), ny - 2);
-    const zi = Math.min(Math.max(Math.round(z), 1), nz - 2);
-    const gx = field[id(xi + 1, yi, zi)] - field[id(xi - 1, yi, zi)];
-    const gy = field[id(xi, yi + 1, zi)] - field[id(xi, yi - 1, zi)];
-    const gz = field[id(xi, yi, zi + 1)] - field[id(xi, yi, zi - 1)];
-    const l = Math.hypot(gx, gy, gz) || 1;
-    return [gx / l, gy / l, gz / l];
+    const x0 = Math.floor(x), y0 = Math.floor(y), z0 = Math.floor(z);
+    const fx = x - x0, fy = y - y0, fz = z - z0;
+    const g = [0, 0, 0], t = [0, 0, 0];
+    for (let c = 0; c < 8; c++) {
+      const dx = c & 1, dy = (c >> 1) & 1, dz = (c >> 2) & 1;
+      const w = (dx ? fx : 1 - fx) * (dy ? fy : 1 - fy) * (dz ? fz : 1 - fz);
+      if (w === 0) continue;
+      t[0] = t[1] = t[2] = 0;
+      gradAt(x0 + dx, y0 + dy, z0 + dz, t);
+      g[0] += w * t[0]; g[1] += w * t[1]; g[2] += w * t[2];
+    }
+    const l = Math.hypot(g[0], g[1], g[2]) || 1;
+    return [g[0] / l, g[1] / l, g[2] / l];
   };
   const corners = [];
   for (let c = 0; c < 8; c++) corners.push([c & 1, (c >> 1) & 1, (c >> 2) & 1]);

@@ -76,7 +76,10 @@ export class OrbitCamera {
   }
 
   matrices(aspect) {
-    const proj = perspective(0.75, aspect, this.distance * 0.02, this.distance * 8);
+    // On tall (phone) screens widen the vertical field of view so the tunnel's
+    // length still fits across the width.
+    const fovy = 2 * Math.atan(Math.tan(0.375) * Math.max(1, 1.5 / aspect));
+    const proj = perspective(fovy, aspect, this.distance * 0.02, this.distance * 8);
     const view = lookAt(this.eye(), this.target, [0, 1, 0]);
     return { proj, view, viewProj: multiply(proj, view), eye: this.eye() };
   }

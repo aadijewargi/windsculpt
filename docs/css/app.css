@@ -184,7 +184,9 @@ details a { color: var(--graphite); }
 /* ---------------------------------------------------------------- small screens */
 @media (max-width: 860px) {
   body { display: block; }
-  .bar { flex-wrap: wrap; padding: 10px 16px; }
+  .bar { flex-wrap: wrap; padding: 10px 16px; row-gap: 8px; }
+  .actions { display: grid; grid-template-columns: repeat(4, 1fr); width: 100%; gap: 6px; }
+  .actions button { padding: 6px 4px; font-size: 13.5px; }
   .brand p { display: none; }
   .layout { display: block; }
   .tunnel { height: 62vh; min-height: 360px; }

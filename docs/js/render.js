@@ -10,10 +10,11 @@ import { program, texture, framebuffer, FULLSCREEN_VS, bindTextures } from './gl
 const FIELD_GLSL = `${ATLAS_GLSL}
 uniform highp sampler2D uMacro;
 uniform highp sampler2D uMask;
+uniform float uYMin;   // 1 with a rolling road (row 0 is ground), else 0
 vec4 fetchM(ivec3 p) { p = clamp(p, ivec3(0), uN - 1); return texelFetch(uMacro, toAtlas(p), 0); }
 // Trilinear interpolation of (ux, uy, uz, rho) at a continuous lattice position.
 vec4 sampleM(vec3 q) {
-  q = clamp(q, vec3(0.0), vec3(uN - 1));
+  q = clamp(q, vec3(0.0, uYMin, 0.0), vec3(uN - 1));
   ivec3 i = min(ivec3(floor(q)), uN - 2);
   vec3 f = q - vec3(i);
   vec4 c000 = fetchM(i), c100 = fetchM(i + ivec3(1, 0, 0));
@@ -231,7 +232,7 @@ void main() {
   c += line * 0.05;
   if (uBelt >= 0.0) {
     float stripe = step(0.5, fract((vXZ.x - uBelt) / 12.0));
-    c = mix(vec3(0.17, 0.19, 0.21), vec3(0.22, 0.24, 0.26), stripe);
+    c = mix(vec3(0.15, 0.18, 0.21), vec3(0.18, 0.21, 0.24), stripe);
   }
   o = vec4(c, 1.0);
 }`;
@@ -351,6 +352,7 @@ export class Renderer {
     const gl = this.gl, s = this.solver;
     gl.uniform3i(p.u.uN, s.nx, s.ny, s.nz);
     gl.uniform1i(p.u.uTX, s.tx);
+    if (p.u.uYMin !== undefined) gl.uniform1f(p.u.uYMin, s.movingGround ? 1 : 0);
   }
 
   /** Advance smoke by `steps` lattice time steps through the current field. */
