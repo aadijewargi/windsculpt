@@ -149,7 +149,7 @@
     <details>
       <summary>How it works</summary>
       <p>The tunnel is a grid of up to 1.8 million cells. Each cell holds 19 numbers describing how many air particles are moving in each direction, and every time step they stream to their neighbours and collide. This is the lattice Boltzmann method, and it runs as a shader on your graphics card.</p>
-      <p>Your drawing becomes a signed distance field. Cells inside it are solid, and air bouncing off them gives the drag and lift through momentum exchange. Coefficients use the frontal area, so a sphere at moderate Reynolds number should read close to 0.5.</p>
+      <p>Your drawing becomes a signed distance field. Cells inside it are solid, and air bouncing off them gives the drag and lift through momentum exchange. Coefficients use the frontal area. Because surfaces are made of grid cells, they read a little high (for a sphere, about 5 to 15 percent depending on the grid), so they are best for comparing shapes with each other.</p>
       <p><a href="https://github.com/aadijewargi/windsculpt">Source, equations and validation on GitHub</a></p>
     </details>
   </aside>
