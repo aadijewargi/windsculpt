@@ -45,7 +45,8 @@ export class LBMSolver {
     this.ux = new Float64Array(this.n);
     this.uy = new Float64Array(this.n);
     this.uz = new Float64Array(this.n);
-    this.bodyForce = [0, 0, 0]; // force exerted by the fluid on solids, last step
+    this.bodyForce = [0, 0, 0]; // force exerted by the fluid on the body, last step
+    this.prevBodyForce = [0, 0, 0];
     this.time = 0;
     this.initUniform(this.boundary === 'tunnel' ? this.inletVelocity() : [0, 0, 0]);
   }
@@ -217,9 +218,19 @@ export class LBMSolver {
     }
 
     this.f = g; this.g = f;
+    this.prevBodyForce = this.bodyForce;
     this.bodyForce = [bfx, bfy, bfz];
     this.time++;
     this.computeMacros();
+  }
+
+  /**
+   * Body force averaged over the last two steps. Near tau = 1/2 the BGK
+   * momentum exchange alternates between two values on odd and even steps;
+   * the average is the physical force.
+   */
+  pairForce() {
+    return this.bodyForce.map((f, a) => (f + this.prevBodyForce[a]) / 2);
   }
 
   run(steps) { for (let s = 0; s < steps; s++) this.step(); }

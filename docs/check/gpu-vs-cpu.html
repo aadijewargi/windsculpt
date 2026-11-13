@@ -49,9 +49,10 @@ for (const c of cases) {
     maxErr = Math.max(maxErr, Math.abs(g.ux[k] - cpu.ux[k]), Math.abs(g.uy[k] - cpu.uy[k]), Math.abs(g.uz[k] - cpu.uz[k]));
     maxRhoErr = Math.max(maxRhoErr, Math.abs(g.rho[k] - cpu.rho[k]));
   }
-  const fmag = Math.hypot(...cpu.bodyForce);
-  const fErr = Math.hypot(force[0] - cpu.bodyForce[0], force[1] - cpu.bodyForce[1], force[2] - cpu.bodyForce[2]) / fmag;
-  results.push({ case: c.name, steps, maxU, relErr: maxErr / maxU, maxRhoErr, cpuForce: cpu.bodyForce, gpuForce: force,
+  const cf = cpu.pairForce();
+  const fmag = Math.hypot(...cf);
+  const fErr = Math.hypot(force[0] - cf[0], force[1] - cf[1], force[2] - cf[2]) / fmag;
+  results.push({ case: c.name, steps, maxU, relErr: maxErr / maxU, maxRhoErr, cpuForce: cf, gpuForce: force,
     forceRelErr: fErr, pass: maxErr / maxU < 1e-3 && maxRhoErr < 1e-4 && fErr < 1e-3 });
 }
 window.result = { cases: results, pass: results.every((r) => r.pass) };

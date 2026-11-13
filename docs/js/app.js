@@ -135,7 +135,9 @@ function placement() {
   let bottom; // distance from the body's centre to its lowest point, in cells
   if (state.mode === 'revolve') bottom = Math.max(...state.side.map(([, v]) => Math.abs(v))) * state.stretch[1] * scale;
   else bottom = -Math.min(...state.side.map(([, v]) => v)) * state.stretch[1] * scale;
-  const cy = state.ground ? 1 + 0.05 * L + bottom : (grid.ny - 1) / 2;
+  // Ground clearance: 5% of the length, but never under 4 cells. A gap only one
+  // or two cells high is unresolved and makes the force flicker between steps.
+  const cy = state.ground ? 1 + Math.max(0.05 * L, 4) + bottom : (grid.ny - 1) / 2;
   return { center: [grid.nx * 0.3, cy, (grid.nz - 1) / 2], length: L, pitch: state.pitch, yaw: state.yaw };
 }
 

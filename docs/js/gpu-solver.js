@@ -275,10 +275,15 @@ export class GPUSolver {
     this.fA = Array.from({ length: NT }, mk);
     this.fB = Array.from({ length: NT }, mk);
     this.macro = mk();
-    this.forceTex = mk();
+    // Momentum-exchange force per cell. The two ping-pong framebuffers write to
+    // separate force targets, so the last two steps are always available: BGK
+    // with bounce-back walls has an odd/even-step oscillation near tau = 1/2,
+    // and only the two-step average is meaningful.
+    this.forceA = mk();
+    this.forceB = mk();
     this.mask = texture(gl, this.width, this.height, { internal: gl.R8, format: gl.RED, type: gl.UNSIGNED_BYTE });
-    this.fbA = framebuffer(gl, [...this.fA, this.macro, this.forceTex]);
-    this.fbB = framebuffer(gl, [...this.fB, this.macro, this.forceTex]);
+    this.fbA = framebuffer(gl, [...this.fA, this.macro, this.forceA]);
+    this.fbB = framebuffer(gl, [...this.fB, this.macro, this.forceB]);
     this.cur = 'A';
     this.drawBuffers = Array.from({ length: 7 }, (_, i) => gl.COLOR_ATTACHMENT0 + i);
 
@@ -370,13 +375,13 @@ export class GPUSolver {
     }
   }
 
-  /** Total momentum-exchange force on all solids from the last step. */
-  totalForce() {
+  /** Sum a force atlas with the reduction chain and read back the total. */
+  _reduceForce(tex) {
     const gl = this.gl;
     const p = this.reduceProg;
     gl.useProgram(p.prog);
     gl.bindVertexArray(this.vao);
-    let src = this.forceTex;
+    let src = tex;
     for (const r of this.reduce) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, r.fb);
       gl.drawBuffers([gl.COLOR_ATTACHMENT0]);
@@ -390,6 +395,12 @@ export class GPUSolver {
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, out);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     return [out[0], out[1], out[2]];
+  }
+
+  /** Momentum-exchange force on the body, averaged over the last two steps. */
+  totalForce() {
+    const a = this._reduceForce(this.forceA), b = this._reduceForce(this.forceB);
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2];
   }
 
   /** Read an atlas texture back as a Float32Array (RGBA per texel). */

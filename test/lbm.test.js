@@ -45,6 +45,27 @@ test('the tunnel keeps its free-stream speed and density with a body in it', asy
   }
 });
 
+test('an unresolved one-cell gap makes the force alternate on odd and even steps; the two-step average does not', async () => {
+  const { voxelize, PRESETS } = await import('../docs/js/shapes.js');
+  const grid = { nx: 40, ny: 20, nz: 20 };
+  // A cube whose underside (y = 2) sits one fluid row above a ground at y = 0.
+  const body = voxelize(PRESETS.cube, grid, { center: [13.5, 5.5, 9.5], length: 10 });
+  const solid = Uint8Array.from(body.solid);
+  for (let z = 0; z < 20; z++) for (let x = 0; x < 40; x++) solid[x + 40 * (0 + 20 * z)] = 2;
+  const s = new LBMSolver({ ...grid, tau: 0.505, uIn: [0.07, 0, 0], solid, movingGround: true, sponge: 5, spongeTau: 1, ramp: 100, smagorinsky: 0.17 });
+  s.run(400);
+  let jumpSingle = 0, jumpPair = 0, mean = 0;
+  let prev = s.bodyForce[0], prevPair = s.pairForce()[0];
+  for (let t = 0; t < 20; t++) {
+    s.step();
+    const f = s.bodyForce[0], p = s.pairForce()[0];
+    jumpSingle += Math.abs(f - prev); jumpPair += Math.abs(p - prevPair); mean += p / 20;
+    prev = f; prevPair = p;
+  }
+  assert.ok(jumpSingle / 20 > 0.1 * Math.abs(mean), `expected an odd/even oscillation (${jumpSingle / 20} vs mean ${mean})`);
+  assert.ok(jumpPair < 0.25 * jumpSingle, `pair average should be smooth (${jumpPair} vs ${jumpSingle})`);
+});
+
 test('a rolling road moving with the free stream leaves the flow undisturbed; a fixed floor does not', () => {
   const nx = 16, ny = 10, nz = 6;
   const solid = new Uint8Array(nx * ny * nz);
