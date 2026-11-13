@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>windsculpt</title>
+<meta name="description" content="Draw a shape and drop it in a 3D wind tunnel. A real-time lattice Boltzmann flow solver running on your GPU.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap">
+<link rel="stylesheet" href="css/app.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231f2a35'/%3E%3Cpath d='M4 11c6 0 8-3 13-3s7 3 11 3M4 17c7 0 9-2 13 1s7 2 11 1M4 23c6 0 8-3 13-2s7 2 11 2' stroke='%23f2c230' stroke-width='2' fill='none' stroke-linecap='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">
+    <h1>windsculpt</h1>
+    <p>Draw a shape and watch the air move around it.</p>
+  </div>
+  <div class="actions">
+    <button id="run" class="primary" type="button">Pause</button>
+    <button id="restart" type="button">Restart wind</button>
+    <button id="share" type="button">Copy link</button>
+    <button id="snapshot" type="button">Save image</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="tunnel" aria-label="Wind tunnel">
+    <canvas id="view" aria-label="3D view of the wind tunnel. Drag to orbit, scroll or pinch to zoom, right-drag or shift-drag to pan."></canvas>
+
+    <div class="hud">
+      <div class="readouts">
+        <div class="readout drag"><span class="value" id="cd">–</span><span class="label">Drag coefficient</span></div>
+        <div class="readout lift"><span class="value" id="cl">–</span><span class="label">Lift coefficient</span></div>
+        <div class="readout"><span class="value" id="re-hud">–</span><span class="label">Reynolds number</span></div>
+      </div>
+      <canvas id="chart" aria-hidden="true"></canvas>
+      <p class="status" id="status">Starting the wind…</p>
+    </div>
+
+    <div class="legend" id="legend" hidden>
+      <span class="legend-title"></span>
+      <div class="legend-bar" data-kind="seq"></div>
+      <div class="legend-ticks"><span></span><span></span><span></span></div>
+      <span class="legend-note"></span>
+    </div>
+
+    <p class="orbit-hint">Drag to orbit. Scroll to zoom. Right-drag to pan. Space pauses.</p>
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <div class="fallback" id="fallback" hidden>
+      <h2>The wind tunnel needs WebGL2 with float render targets</h2>
+      <p id="fallback-reason"></p>
+      <p>Try a recent Chrome, Edge or Firefox on a computer with a graphics card, and check that hardware acceleration is turned on.</p>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <section>
+      <h2>Start from a shape</h2>
+      <div class="chips">
+        <button type="button" data-preset="sphere">Sphere</button>
+        <button type="button" data-preset="teardrop">Teardrop</button>
+        <button type="button" data-preset="bullet">Bullet</button>
+        <button type="button" data-preset="cube">Cube</button>
+        <button type="button" data-preset="plate">Flat plate</button>
+        <button type="button" data-preset="cylinder">Cylinder</button>
+        <button type="button" data-preset="wing">Wing</button>
+        <button type="button" data-preset="car">Car</button>
+        <button type="button" data-preset="ahmed">Ahmed body</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Or draw your own</h2>
+      <div class="segmented" role="group" aria-label="How the drawing becomes 3D">
+        <button type="button" data-mode="carve">Carve</button>
+        <button type="button" data-mode="revolve">Revolve</button>
+        <button type="button" data-mode="extrude">Extrude</button>
+      </div>
+      <p class="note" id="mode-note"></p>
+      <figure class="pad">
+        <canvas id="pad-side" aria-label="Side view drawing pad"></canvas>
+        <figcaption>Side view</figcaption>
+      </figure>
+      <figure class="pad">
+        <canvas id="pad-top" aria-label="Top view drawing pad"></canvas>
+        <figcaption>Top view</figcaption>
+      </figure>
+      <p class="note">Draw a closed outline in one stroke. The dashed box is the body length.</p>
+    </section>
+
+    <section>
+      <h2>Position</h2>
+      <label class="slider"><span>Angle of attack</span><output id="pitch-out"></output>
+        <input id="pitch" type="range" min="-30" max="30" step="1"></label>
+      <label class="slider"><span>Yaw</span><output id="yaw-out"></output>
+        <input id="yaw" type="range" min="-45" max="45" step="1"></label>
+      <label class="slider"><span>Length</span><output id="size-out"></output>
+        <input id="size" type="range" min="0.08" max="0.5" step="0.01"></label>
+      <label class="check"><input id="ground" type="checkbox"> Rolling road (a moving floor, as in car wind tunnels)</label>
+    </section>
+
+    <section>
+      <h2>Air</h2>
+      <label class="slider"><span>Reynolds number</span><output id="re-out"></output>
+        <input id="re" type="range" min="1" max="4.7" step="0.01"></label>
+      <p class="note">Low values behave like syrup or tiny insects; high values like air around a car. Above a few thousand the grid cannot resolve every eddy, so a turbulence model fills in.</p>
+      <label class="select"><span>Grid</span>
+        <select id="res">
+          <option value="low">Coarse, 96 × 48 × 48</option>
+          <option value="medium">Medium, 128 × 64 × 64</option>
+          <option value="high">Fine, 192 × 96 × 96</option>
+        </select></label>
+    </section>
+
+    <section>
+      <h2>See the flow</h2>
+      <label class="select"><span>Smoke</span>
+        <select id="rake">
+          <option value="sheet">Horizontal sheet</option>
+          <option value="curtain">Vertical curtain</option>
+          <option value="grid">Full grid</option>
+          <option value="off">Off</option>
+        </select></label>
+      <label class="select"><span>Slice shows</span>
+        <select id="slice-field">
+          <option value="speed">Air speed</option>
+          <option value="pressure">Pressure</option>
+          <option value="vorticity">Vorticity</option>
+          <option value="off">Nothing</option>
+        </select></label>
+      <label class="select"><span>Slice through</span>
+        <select id="slice-axis">
+          <option value="side">Side (lengthwise, vertical)</option>
+          <option value="top">Top (lengthwise, horizontal)</option>
+          <option value="wake">Wake (across the flow)</option>
+        </select></label>
+      <label class="slider"><span>Slice position</span>
+        <input id="slice-pos" type="range" min="0" max="1" step="0.005"></label>
+      <label class="select"><span>Body colour</span>
+        <select id="body-color">
+          <option value="pressure">Surface pressure</option>
+          <option value="clay">Plain clay</option>
+        </select></label>
+    </section>
+
+    <details>
+      <summary>How it works</summary>
+      <p>The tunnel is a grid of up to 1.8 million cells. Each cell holds 19 numbers describing how many air particles are moving in each direction, and every time step they stream to their neighbours and collide. This is the lattice Boltzmann method, and it runs as a shader on your graphics card.</p>
+      <p>Your drawing becomes a signed distance field. Cells inside it are solid, and air bouncing off them gives the drag and lift through momentum exchange. Coefficients use the frontal area, so a sphere at moderate Reynolds number should read close to 0.5.</p>
+      <p><a href="https://github.com/aadijewargi/windsculpt">Source, equations and validation on GitHub</a></p>
+    </details>
+  </aside>
+</main>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
