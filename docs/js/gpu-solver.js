@@ -56,7 +56,7 @@ ${ATLAS_GLSL}
 uniform sampler2D uF0, uF1, uF2, uF3, uF4, uMask;
 uniform float uTau, uCs, uSpongeTau;
 uniform int uSpongeStart, uSponge;
-uniform vec3 uUin;
+uniform vec3 uUin, uGround;
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 layout(location = 2) out vec4 o2;
@@ -65,7 +65,9 @@ layout(location = 4) out vec4 o4;
 layout(location = 5) out vec4 oMacro;
 layout(location = 6) out vec4 oForce;
 
-bool solidAt(ivec2 a) { return texelFetch(uMask, a, 0).r > 0.5; }
+// Mask: 0 = fluid, 1 = body (counts toward the force), 0.5 = ground (moving belt).
+float maskAt(ivec2 a) { return texelFetch(uMask, a, 0).r; }
+bool solidAt(ivec2 a) { return maskAt(a) > 0.25; }
 
 void writeAll(float d[20]) {
   o0 = vec4(d[0], d[1], d[2], d[3]);
@@ -84,7 +86,7 @@ void main() {
   if (solidAt(a)) { writeAll(d); oMacro = vec4(0.0, 0.0, 0.0, 1.0); oForce = vec4(0.0, 0.0, 0.0, 1.0); return; }
 
   vec3 force = vec3(0.0);
-  ivec3 s; ivec2 sa; bool oy, oz;
+  ivec3 s; ivec2 sa; bool oy, oz; float mv;
   d[0] = ${fetchDir(0, 'a')};`);
 
   for (let i = 1; i < Q; i++) {
@@ -100,9 +102,12 @@ void main() {
   if (oz) s.z = p.z;
   s.x = clamp(s.x, 0, uN.x - 1);
   sa = toAtlas(s);
-  if (solidAt(sa)) {
+  mv = maskAt(sa);
+  if (mv > 0.75) {
     d[${i}] = ${fetchDir(o, 'a')};
     force += ${fl(2)} * vec3(${fl(co[0])}, ${fl(co[1])}, ${fl(co[2])}) * (d[${i}] + ${wConst(o)});
+  } else if (mv > 0.25) {
+    d[${i}] = ${fetchDir(o, 'a')} + ${(6 * W[i]).toPrecision(17)} * dot(vec3(${fl(cx)}, ${fl(cy)}, ${fl(cz)}), uGround);
   } else if (oy && oz) d[${i}] = ${fetchDir(REFL_YZ[i], 'sa')};
   else if (oy) d[${i}] = ${fetchDir(REFL_Y[i], 'sa')};
   else if (oz) d[${i}] = ${fetchDir(REFL_Z[i], 'sa')};
@@ -203,7 +208,7 @@ void main() {
   ivec3 p = fromAtlas(a);
   float e[20];
   for (int i = 0; i < 20; i++) e[i] = 0.0;
-  bool solid = p.z >= uN.z || texelFetch(uMask, a, 0).r > 0.5;
+  bool solid = p.z >= uN.z || texelFetch(uMask, a, 0).r > 0.25;
   vec3 u = solid ? vec3(0.0) : uU;
   float uu = dot(u, u);
   if (!solid) {
@@ -245,6 +250,7 @@ export class GPUSolver {
     this.tx = L.tx; this.width = L.w; this.height = L.h;
     this.tau = 0.56; this.cs = 0.17; this.sponge = Math.round(nx * 0.12); this.spongeTau = 1.0;
     this.uIn = [0.08, 0, 0]; this.ramp = 400;
+    this.movingGround = false;
     this.time = 0;
 
     this.stepProg = program(gl, FULLSCREEN_VS, stepShader());
@@ -278,14 +284,15 @@ export class GPUSolver {
 
   get fCurrent() { return this.cur === 'A' ? this.fA : this.fB; }
 
-  /** Upload a solid mask (1 = solid) indexed x + nx*(y + ny*z). */
+  /** Upload a solid mask (1 = body, 2 = ground) indexed x + nx*(y + ny*z). */
   setSolid(solid) {
     const { gl, nx, ny, nz, width, tx } = this;
     const atlas = new Uint8Array(this.width * this.height);
     for (let z = 0; z < nz; z++) {
       const ox = (z % tx) * nx, oy = Math.floor(z / tx) * ny;
       for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
-        atlas[ox + x + width * (oy + y)] = solid[x + nx * (y + ny * z)] ? 255 : 0;
+        const v = solid[x + nx * (y + ny * z)];
+        atlas[ox + x + width * (oy + y)] = v === 1 ? 255 : v ? 128 : 0;
       }
     }
     gl.bindTexture(gl.TEXTURE_2D, this.mask);
@@ -338,7 +345,9 @@ export class GPUSolver {
     gl.uniform1i(p.u.uSponge, this.sponge);
     gl.uniform1i(p.u.uSpongeStart, this.nx - this.sponge);
     for (let k = 0; k < n; k++) {
-      gl.uniform3fv(p.u.uUin, this.inletVelocity());
+      const uin = this.inletVelocity();
+      gl.uniform3fv(p.u.uUin, uin);
+      gl.uniform3fv(p.u.uGround, this.movingGround ? uin : [0, 0, 0]);
       const src = this.fCurrent;
       bindTextures(gl, p, [['uF0', src[0]], ['uF1', src[1]], ['uF2', src[2]], ['uF3', src[3]], ['uF4', src[4]], ['uMask', this.mask]]);
       this._drawInto(this.cur === 'A' ? this.fbB : this.fbA);

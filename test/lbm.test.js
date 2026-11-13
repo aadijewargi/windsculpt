@@ -27,6 +27,27 @@ test('uniform free stream is an exact steady state of the empty tunnel', () => {
   assert.ok(err < 1e-12, `max deviation ${err}`);
 });
 
+test('a rolling road moving with the free stream leaves the flow undisturbed; a fixed floor does not', () => {
+  const nx = 16, ny = 10, nz = 6;
+  const solid = new Uint8Array(nx * ny * nz);
+  for (let z = 0; z < nz; z++) for (let x = 0; x < nx; x++) solid[x + nx * (0 + ny * z)] = 2;
+  const opts = { nx, ny, nz, tau: 0.6, uIn: [0.08, 0, 0], sponge: 4, smagorinsky: 0.17, solid };
+  const moving = new LBMSolver({ ...opts, movingGround: true });
+  moving.run(100);
+  let err = 0;
+  for (let k = 0; k < moving.n; k++) {
+    if (solid[k]) continue;
+    err = Math.max(err, Math.abs(moving.ux[k] - 0.08), Math.abs(moving.uy[k]), Math.abs(moving.uz[k]), Math.abs(moving.rho[k] - 1));
+  }
+  assert.ok(err < 1e-6, `moving ground disturbed the flow by ${err}`);
+  assert.deepEqual(moving.bodyForce, [0, 0, 0], 'ground is not part of the body force');
+
+  const fixed = new LBMSolver({ ...opts, movingGround: false });
+  fixed.run(100);
+  const nearWall = fixed.ux[fixed.idx(nx / 2, 1, nz / 2)];
+  assert.ok(nearWall < 0.07, `a fixed floor should slow the flow next to it (u = ${nearWall})`);
+});
+
 test('Taylor-Green vortex decays at the rate set by nu = (tau - 1/2)/3', () => {
   const N = 32, tau = 0.8, U = 0.01, k = (2 * Math.PI) / N;
   const s = new LBMSolver({ nx: N, ny: N, nz: 2, tau, boundary: 'periodic' });

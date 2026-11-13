@@ -22,7 +22,9 @@ export class LBMSolver {
    * @param {number} [o.spongeTau=1]    relaxation time at the very end of the sponge
    * @param {number} [o.ramp=0]         steps over which the inlet ramps up
    * @param {number[]} [o.force=[0,0,0]] uniform body force density (Guo scheme)
-   * @param {Uint8Array} [o.solid]      1 = solid node, indexed x + nx*(y + ny*z)
+   * @param {Uint8Array} [o.solid]      1 = body node, 2 = ground node (moving belt),
+   *                                    indexed x + nx*(y + ny*z)
+   * @param {boolean} [o.movingGround=false] ground nodes move with the inlet velocity
    */
   constructor(o) {
     this.nx = o.nx; this.ny = o.ny; this.nz = o.nz;
@@ -36,6 +38,7 @@ export class LBMSolver {
     this.ramp = o.ramp ?? 0;
     this.force = o.force ?? [0, 0, 0];
     this.solid = o.solid ?? new Uint8Array(this.n);
+    this.movingGround = o.movingGround ?? false;
     this.f = new Float64Array(Q * this.n);
     this.g = new Float64Array(Q * this.n);
     this.rho = new Float64Array(this.n);
@@ -106,6 +109,7 @@ export class LBMSolver {
     const [Fx, Fy, Fz] = this.force;
     const hasForce = Fx !== 0 || Fy !== 0 || Fz !== 0;
     const uin = this.inletVelocity();
+    const ug = this.movingGround ? uin : [0, 0, 0];
     const spongeStart = nx - this.sponge;
     const fi = new Float64Array(Q);
     let bfx = 0, bfy = 0, bfz = 0;
@@ -132,13 +136,19 @@ export class LBMSolver {
           sx = sx < 0 ? 0 : sx >= nx ? nx - 1 : sx;
         }
         const ks = sx + nx * (sy + ny * sz);
-        if (solid[ks]) {
+        if (solid[ks] === 1) {
           // Halfway bounce-back: the population that left toward the wall returns reversed.
           const o = OPP[i];
           const v = f[o * n + k];
           fi[i] = v;
           // Momentum exchange: the fluid gives 2 c_o f_o to the solid.
           bfx += 2 * C[o][0] * v; bfy += 2 * C[o][1] * v; bfz += 2 * C[o][2] * v;
+        } else if (solid[ks]) {
+          // Ground: bounce-back off a wall moving at u_g (Ladd):
+          //   f_i = f*_opp + 6 w_i rho (c_i . u_g), with rho ~ 1.
+          // Not counted in the body force.
+          const o = OPP[i];
+          fi[i] = f[o * n + k] + 6 * W[i] * (c[0] * ug[0] + c[1] * ug[1] + c[2] * ug[2]);
         } else {
           fi[i] = f[d * n + ks];
         }
