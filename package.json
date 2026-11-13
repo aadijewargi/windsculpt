@@ -1,0 +1,18 @@
+{
+  "name": "windsculpt",
+  "version": "0.1.0",
+  "description": "Draw a shape, drop it in a 3D wind tunnel: a real-time D3Q19 lattice Boltzmann solver in the browser.",
+  "type": "module",
+  "license": "MIT",
+  "author": "aadijewargi",
+  "repository": "github:aadijewargi/windsculpt",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:gpu": "node scripts/gpu-check.js",
+    "serve": "node scripts/serve.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.48.0"
+  },
+  "engines": { "node": ">=20" }
+}
