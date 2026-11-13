@@ -370,7 +370,9 @@ function drawChart() {
   const line = (arr, color) => {
     if (arr.length < 2) return;
     ctx.strokeStyle = color; ctx.lineWidth = 1.5 * dpr; ctx.beginPath();
-    arr.forEach((v, i) => { const x = (i / (hist.max - 1)) * w; i ? ctx.lineTo(x, Y(v)) : ctx.moveTo(x, Y(v)); });
+    // Stretch short histories across the chart; scroll once it is full.
+    const span = Math.max(arr.length, 60) - 1;
+    arr.forEach((v, i) => { const x = (i / span) * w; i ? ctx.lineTo(x, Y(v)) : ctx.moveTo(x, Y(v)); });
     ctx.stroke();
   };
   line(hist.cl, '#8ec5e8');
