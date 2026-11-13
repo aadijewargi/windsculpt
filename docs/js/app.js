@@ -4,7 +4,8 @@ import { GPUSolver } from './gpu-solver.js';
 import { Renderer } from './render.js';
 import { OrbitCamera } from './math3d.js';
 import { SketchPad } from './sketch.js';
-import { PRESETS, resample } from './shapes.js';
+import { PRESETS } from './shapes.js';
+import { encodeProfile, decodeProfile } from './share.js';
 import { tauFromViscosity } from './lattice.js';
 
 const GRIDS = {
@@ -46,13 +47,6 @@ const state = {
 };
 
 // ------------------------------------------------------------------ share links
-
-const q = (v) => Math.round(v * 100);
-function encodeProfile(pts) { return resample(pts, 48).map(([u, v]) => `${q(u)}_${q(v)}`).join('.'); }
-function decodeProfile(s) {
-  const pts = s.split('.').map((p) => p.split('_').map((n) => +n / 100));
-  return pts.length >= 3 && pts.every((p) => p.length === 2 && p.every(Number.isFinite)) ? pts : null;
-}
 
 function writeHash() {
   const p = new URLSearchParams();
